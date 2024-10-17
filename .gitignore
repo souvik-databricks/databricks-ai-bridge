@@ -1,0 +1,17 @@
+# test
+.pytest_cache/
+
+# Byte-compiled files
+__pycache__
+*.pyc
+
+# Editor files
+*.vscode
+
+# Mac
+.DS_Store
+
+# packaging
+dist/
+*.egg-info/
+Pipfile

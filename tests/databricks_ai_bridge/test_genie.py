@@ -1,3 +1,4 @@
+from datetime import datetime
 import pytest
 from unittest.mock import MagicMock, patch
 from databricks_ai_bridge.genie import Genie, _parse_query_result
@@ -57,24 +58,71 @@ def test_ask_question(genie, mock_workspace_client):
     ]
     result = genie.ask_question("What is the meaning of life?")
     assert result == "Answer"
+    
+def test_parse_query_result_empty():
+    resp = {
+        "manifest": {
+            "schema": {
+                "columns": []
+            }
+        },
+        "result": None
+    }
+    result = _parse_query_result(resp)
+    assert result == "EMPTY"
 
-def test_parse_query_result():
+def test_parse_query_result_with_data():
     resp = {
         "manifest": {
             "schema": {
                 "columns": [
-                    {"name": "col1", "type_name": "STRING"},
-                    {"name": "col2", "type_name": "INT"},
+                    {"name": "id", "type_name": "INT"},
+                    {"name": "name", "type_name": "STRING"},
+                    {"name": "created_at", "type_name": "TIMESTAMP"},
                 ]
             }
         },
         "result": {
             "data_typed_array": [
-                {"values": [{"str": "value1"}, {"str": "1"}]},
-                {"values": [{"str": "value2"}, {"str": "2"}]},
+                {"values": [{"str": "1"}, {"str": "Alice"}, {"str": "2023-10-01T00:00:00Z"}]},
+                {"values": [{"str": "2"}, {"str": "Bob"}, {"str": "2023-10-02T00:00:00Z"}]},
             ]
         }
     }
-    expected_df = pd.DataFrame({"col1": ["value1", "value2"], "col2": [1, 2]})
     result = _parse_query_result(resp)
+    expected_df = pd.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["Alice", "Bob"],
+            "created_at": [datetime(2023, 10, 1).date(), datetime(2023, 10, 2).date()],
+        }
+    )
+    assert result == expected_df.to_string()
+
+def test_parse_query_result_with_null_values():
+    resp = {
+        "manifest": {
+            "schema": {
+                "columns": [
+                    {"name": "id", "type_name": "INT"},
+                    {"name": "name", "type_name": "STRING"},
+                    {"name": "created_at", "type_name": "TIMESTAMP"},
+                ]
+            }
+        },
+        "result": {
+            "data_typed_array": [
+                {"values": [{"str": "1"}, {"str": None}, {"str": "2023-10-01T00:00:00Z"}]},
+                {"values": [{"str": "2"}, {"str": "Bob"}, {"str": None}]},
+            ]
+        }
+    }
+    result = _parse_query_result(resp)
+    expected_df = pd.DataFrame(
+        {
+            "id": [1, 2],
+            "name": [None, "Bob"],
+            "created_at": [datetime(2023, 10, 1).date(), None],
+        }
+    )
     assert result == expected_df.to_string()

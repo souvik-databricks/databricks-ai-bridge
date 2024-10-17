@@ -47,11 +47,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install .[dev]
-      - name: Run tests with pydantic v1
+      - name: Run tests
         run: |
-          pip install 'pydantic<2'
-          pytest tests/
-      - name: Run tests with pydantic v2
-        run: |
-          pip install 'pydantic>=2'
           pytest tests/

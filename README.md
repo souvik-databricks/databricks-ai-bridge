@@ -1,1 +1,1 @@
-# databricks-ai
+# databricks-ai-bridge

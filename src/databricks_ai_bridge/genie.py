@@ -13,7 +13,7 @@ def _parse_query_result(resp) -> Union[str, pd.DataFrame]:
     output = resp["result"]
     if not output:
         return "EMPTY"
-    
+
     for item in resp["result"]["data_typed_array"]:
         row = []
         for column, value in zip(columns, item["values"]):
@@ -37,9 +37,9 @@ def _parse_query_result(resp) -> Union[str, pd.DataFrame]:
                 row.append(bytes(str_value, "utf-8"))
             else:
                 row.append(str_value)
-                
+
         rows.append(row)
-    
+
     query_result = pd.DataFrame(rows, columns=header).to_string()
     return query_result
 
@@ -81,15 +81,11 @@ class Genie:
                     headers=self.headers,
                 )
                 if resp["status"] == "EXECUTING_QUERY":
-                    sql = next(r for r in resp["attachments"] if "query" in r)["query"][
-                        "query"
-                    ]
+                    sql = next(r for r in resp["attachments"] if "query" in r)["query"]["query"]
                     # print(f"SQL: {sql}")
                     return poll_query_results()
                 elif resp["status"] == "COMPLETED":
-                    return next(r for r in resp["attachments"] if "text" in r)["text"][
-                        "content"
-                    ]
+                    return next(r for r in resp["attachments"] if "text" in r)["text"]["content"]
                 else:
                     # print(f"Waiting...: {resp['status']}")
                     time.sleep(5)

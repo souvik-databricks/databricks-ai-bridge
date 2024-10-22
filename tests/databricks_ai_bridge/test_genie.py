@@ -13,9 +13,11 @@ def mock_workspace_client():
         mock_client = MockWorkspaceClient.return_value
         yield mock_client
 
+
 @pytest.fixture
 def genie(mock_workspace_client):
     return Genie(space_id="test_space_id")
+
 
 def test_start_conversation(genie, mock_workspace_client):
     mock_workspace_client.genie._api.do.return_value = {"conversation_id": "123"}
@@ -28,6 +30,7 @@ def test_start_conversation(genie, mock_workspace_client):
         headers=genie.headers,
     )
 
+
 def test_create_message(genie, mock_workspace_client):
     mock_workspace_client.genie._api.do.return_value = {"message_id": "456"}
     response = genie.create_message("123", "Hello again")
@@ -39,6 +42,7 @@ def test_create_message(genie, mock_workspace_client):
         headers=genie.headers,
     )
 
+
 def test_poll_for_result_completed(genie, mock_workspace_client):
     mock_workspace_client.genie._api.do.side_effect = [
         {"status": "COMPLETED", "attachments": [{"text": {"content": "Result"}}]},
@@ -46,33 +50,19 @@ def test_poll_for_result_completed(genie, mock_workspace_client):
     result = genie.poll_for_result("123", "456")
     assert result == "Result"
 
+
 def test_poll_for_result_executing_query(genie, mock_workspace_client):
     mock_workspace_client.genie._api.do.side_effect = [
-        {
-            "status": "EXECUTING_QUERY",
-            "attachments": [
-                {
-                    "query": {
-                        "query": "SELECT *"
-                    }
-                }
-            ]
-        },
+        {"status": "EXECUTING_QUERY", "attachments": [{"query": {"query": "SELECT *"}}]},
         {
             "statement_response": {
-                "status": {
-                    "state": "SUCCEEDED"
-                },
-                "manifest": {
-                    "schema": {
-                        "columns": []
-                    }
-                },
+                "status": {"state": "SUCCEEDED"},
+                "manifest": {"schema": {"columns": []}},
                 "result": {
                     "data_typed_array": [],
-                }
+                },
             }
-        }
+        },
     ]
     result = genie.poll_for_result("123", "456")
     assert result == pd.DataFrame().to_string()
@@ -85,18 +75,13 @@ def test_ask_question(genie, mock_workspace_client):
     ]
     result = genie.ask_question("What is the meaning of life?")
     assert result == "Answer"
-    
+
+
 def test_parse_query_result_empty():
-    resp = {
-        "manifest": {
-            "schema": {
-                "columns": []
-            }
-        },
-        "result": None
-    }
+    resp = {"manifest": {"schema": {"columns": []}}, "result": None}
     result = _parse_query_result(resp)
     assert result == "EMPTY"
+
 
 def test_parse_query_result_with_data():
     resp = {
@@ -114,7 +99,7 @@ def test_parse_query_result_with_data():
                 {"values": [{"str": "1"}, {"str": "Alice"}, {"str": "2023-10-01T00:00:00Z"}]},
                 {"values": [{"str": "2"}, {"str": "Bob"}, {"str": "2023-10-02T00:00:00Z"}]},
             ]
-        }
+        },
     }
     result = _parse_query_result(resp)
     expected_df = pd.DataFrame(
@@ -125,6 +110,7 @@ def test_parse_query_result_with_data():
         }
     )
     assert result == expected_df.to_string()
+
 
 def test_parse_query_result_with_null_values():
     resp = {
@@ -142,7 +128,7 @@ def test_parse_query_result_with_null_values():
                 {"values": [{"str": "1"}, {"str": None}, {"str": "2023-10-01T00:00:00Z"}]},
                 {"values": [{"str": "2"}, {"str": "Bob"}, {"str": None}]},
             ]
-        }
+        },
     }
     result = _parse_query_result(resp)
     expected_df = pd.DataFrame(

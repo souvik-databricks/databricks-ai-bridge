@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime
 from typing import Union
@@ -82,12 +83,12 @@ class Genie:
                 )
                 if resp["status"] == "EXECUTING_QUERY":
                     sql = next(r for r in resp["attachments"] if "query" in r)["query"]["query"]
-                    # print(f"SQL: {sql}")
+                    logging.debug(f"SQL: {sql}")
                     return poll_query_results()
                 elif resp["status"] == "COMPLETED":
                     return next(r for r in resp["attachments"] if "text" in r)["text"]["content"]
                 else:
-                    # print(f"Waiting...: {resp['status']}")
+                    logging.debug(f"Waiting...: {resp['status']}")
                     time.sleep(5)
 
         def poll_query_results():
@@ -101,10 +102,10 @@ class Genie:
                 if state == "SUCCEEDED":
                     return _parse_query_result(resp)
                 elif state == "RUNNING" or state == "PENDING":
-                    # print(f"Waiting for query result...")
+                    logging.debug("Waiting for query result...")
                     time.sleep(5)
                 else:
-                    # print(f"No query result: {resp['state']}")
+                    logging.debug(f"No query result: {resp['state']}")
                     return None
 
         return poll_result()

@@ -1,8 +1,11 @@
 from datetime import datetime
-import pytest
-from unittest.mock import MagicMock, patch
-from databricks_ai_bridge.genie import Genie, _parse_query_result
+from unittest.mock import patch
+
 import pandas as pd
+import pytest
+
+from databricks_ai_bridge.genie import Genie, _parse_query_result
+
 
 @pytest.fixture
 def mock_workspace_client():
@@ -45,11 +48,35 @@ def test_poll_for_result_completed(genie, mock_workspace_client):
 
 def test_poll_for_result_executing_query(genie, mock_workspace_client):
     mock_workspace_client.genie._api.do.side_effect = [
-        {"status": "EXECUTING_QUERY", "attachments": [{"query": {"query": "SELECT *"}}]},
-        {"statement_response": {"status": {"state": "SUCCEEDED"}, "result": {"data_typed_array": [], "manifest": {"schema": {"columns": []}}}}},
+        {
+            "status": "EXECUTING_QUERY",
+            "attachments": [
+                {
+                    "query": {
+                        "query": "SELECT *"
+                    }
+                }
+            ]
+        },
+        {
+            "statement_response": {
+                "status": {
+                    "state": "SUCCEEDED"
+                },
+                "manifest": {
+                    "schema": {
+                        "columns": []
+                    }
+                },
+                "result": {
+                    "data_typed_array": [],
+                }
+            }
+        }
     ]
     result = genie.poll_for_result("123", "456")
-    assert result == "EMPTY"
+    assert result == pd.DataFrame().to_string()
+
 
 def test_ask_question(genie, mock_workspace_client):
     mock_workspace_client.genie._api.do.side_effect = [

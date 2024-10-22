@@ -13,6 +13,7 @@ def _parse_query_result(resp) -> Union[str, pd.DataFrame]:
     output = resp["result"]
     if not output:
         return "EMPTY"
+    
     for item in resp["result"]["data_typed_array"]:
         row = []
         for column, value in zip(columns, item["values"]):
@@ -21,22 +22,24 @@ def _parse_query_result(resp) -> Union[str, pd.DataFrame]:
             if str_value is None:
                 row.append(None)
                 continue
-            match type_name:
-                case "INT" | "LONG" | "SHORT" | "BYTE":
-                    row.append(int(str_value))
-                case "FLOAT" | "DOUBLE" | "DECIMAL":
-                    row.append(float(str_value))
-                case "BOOLEAN":
-                    row.append(str_value.lower() == "true")
-                case "DATE":
-                    row.append(datetime.strptime(str_value[:10], "%Y-%m-%d").date())
-                case "TIMESTAMP":
-                    row.append(datetime.strptime(str_value[:10], "%Y-%m-%d").date())
-                case "BINARY":
-                    row.append(bytes(str_value, "utf-8"))
-                case _:
-                    row.append(str_value)
+
+            if type_name in ["INT", "LONG", "SHORT", "BYTE"]:
+                row.append(int(str_value))
+            elif type_name in ["FLOAT", "DOUBLE", "DECIMAL"]:
+                row.append(float(str_value))
+            elif type_name == "BOOLEAN":
+                row.append(str_value.lower() == "true")
+            elif type_name == "DATE":
+                row.append(datetime.strptime(str_value[:10], "%Y-%m-%d").date())
+            elif type_name == "TIMESTAMP":
+                row.append(datetime.strptime(str_value[:10], "%Y-%m-%d").date())
+            elif type_name == "BINARY":
+                row.append(bytes(str_value, "utf-8"))
+            else:
+                row.append(str_value)
+                
         rows.append(row)
+    
     query_result = pd.DataFrame(rows, columns=header).to_string()
     return query_result
 

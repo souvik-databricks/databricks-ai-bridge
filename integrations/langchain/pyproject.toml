@@ -1,21 +1,26 @@
 [project]
-name = "databricks-ai-bridge"
+name = "databricks-langchain"
 version = "0.0.1"
-description = "Official Python library for Databricks AI support"
+description = "Support for Datarbricks AI support in LangChain"
 authors = [
     { name="Prithvi Kannan", email="prithvi.kannan@databricks.com" },
 ]
 readme = "README.md"
+license = { text="Apache-2.0" }
 requires-python = ">=3.8"
 dependencies = [
-  "typing_extensions",
-  "pydantic",
-  "databricks-sdk>=0.34.0",
-  "pandas",
+    "langchain>=0.2.0",
+    "langchain-community>=0.2.0",
+    "databricks-ai-bridge",
 ]
 
-[project.license]
-file = "LICENSE.txt"
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "typing_extensions",
+  "databricks-sdk>=0.34.0",
+  "ruff==0.6.4",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -23,18 +28,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 include = [
-  "src/*"
+  "src/databricks_langchain/*"
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/databricks_ai_bridge"]
-
-[project.optional-dependencies]
-dev = [
-  "hatch",
-  "pytest",
-  "ruff==0.6.4",
-]
+packages = ["src/databricks_langchain"]
 
 [tool.ruff]
 line-length = 100
@@ -67,6 +65,3 @@ docstring-code-line-length = 88
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.pytest.ini_options]
-pythonpath = ["src"]

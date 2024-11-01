@@ -4,7 +4,17 @@ from datetime import datetime
 from typing import Union
 
 import pandas as pd
+import tiktoken
 from databricks.sdk import WorkspaceClient
+
+MAX_TOKENS_OF_DATA = 20000  # max tokens of data in markdown format
+MAX_ITERATIONS = 50  # max times to poll the API when polling for either result or the query results, each iteration is ~1 second, so max latency == 2 * MAX_ITERATIONS
+
+
+# Define a function to count tokens
+def _count_tokens(text):
+    encoding = tiktoken.encoding_for_model("gpt-4o")
+    return len(encoding.encode(text))
 
 
 def _parse_query_result(resp) -> Union[str, pd.DataFrame]:
@@ -41,8 +51,16 @@ def _parse_query_result(resp) -> Union[str, pd.DataFrame]:
 
         rows.append(row)
 
-    query_result = pd.DataFrame(rows, columns=header).to_string()
-    return query_result
+    query_result = pd.DataFrame(rows, columns=header).to_markdown()
+
+    # trim down from the total rows until we get under the token limit
+    tokens_used = _count_tokens(query_result)
+    while tokens_used > MAX_TOKENS_OF_DATA:
+        rows.pop()
+        query_result = pd.DataFrame(rows, columns=header).to_markdown()
+        tokens_used = _count_tokens(query_result)
+
+    return query_result.strip() if query_result else query_result
 
 
 class Genie:
@@ -75,24 +93,40 @@ class Genie:
 
     def poll_for_result(self, conversation_id, message_id):
         def poll_result():
-            while True:
+            iteration_count = 0
+            while iteration_count < MAX_ITERATIONS:
+                iteration_count += 1
                 resp = self.genie._api.do(
                     "GET",
                     f"/api/2.0/genie/spaces/{self.space_id}/conversations/{conversation_id}/messages/{message_id}",
                     headers=self.headers,
                 )
                 if resp["status"] == "EXECUTING_QUERY":
-                    sql = next(r for r in resp["attachments"] if "query" in r)["query"]["query"]
+                    query = next(r for r in resp["attachments"] if "query" in r)["query"]
+                    description = query.get("description", "")
+                    sql = query.get("query", "")
+                    logging.debug(f"Description: {description}")
                     logging.debug(f"SQL: {sql}")
                     return poll_query_results()
                 elif resp["status"] == "COMPLETED":
                     return next(r for r in resp["attachments"] if "text" in r)["text"]["content"]
+                elif resp["status"] == "FAILED":
+                    logging.debug("Genie failed to execute the query")
+                    return None
+                elif resp["status"] == "CANCELLED":
+                    logging.debug("Genie query cancelled")
+                    return None
+                elif resp["status"] == "QUERY_RESULT_EXPIRED":
+                    logging.debug("Genie query result expired")
+                    return None
                 else:
                     logging.debug(f"Waiting...: {resp['status']}")
                     time.sleep(5)
 
         def poll_query_results():
-            while True:
+            iteration_count = 0
+            while iteration_count < MAX_ITERATIONS:
+                iteration_count += 1
                 resp = self.genie._api.do(
                     "GET",
                     f"/api/2.0/genie/spaces/{self.space_id}/conversations/{conversation_id}/messages/{message_id}/query-result",

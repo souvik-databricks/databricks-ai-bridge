@@ -1,6 +1,8 @@
+import mlflow
 from databricks_ai_bridge.genie import Genie
 
 
+@mlflow.trace()
 def _concat_messages_array(messages):
     concatenated_message = "\n".join(
         [
@@ -13,6 +15,7 @@ def _concat_messages_array(messages):
     return concatenated_message
 
 
+@mlflow.trace()
 def _query_genie_as_agent(input, genie_space_id, genie_agent_name):
     from langchain_core.messages import AIMessage
 
@@ -26,12 +29,13 @@ def _query_genie_as_agent(input, genie_space_id, genie_agent_name):
     # Send the message and wait for a response
     genie_response = genie.ask_question(message)
 
-    if genie_response:
-        return {"messages": [AIMessage(content=genie_response)]}
+    if query_result := genie_response.result:
+        return {"messages": [AIMessage(content=query_result)]}
     else:
         return {"messages": [AIMessage(content="")]}
 
 
+@mlflow.trace(span_type="AGENT")
 def GenieAgent(genie_space_id, genie_agent_name="Genie", description=""):
     """Create a genie agent that can be used to query the API"""
     from functools import partial

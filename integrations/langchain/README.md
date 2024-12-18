@@ -11,7 +11,7 @@ pip install databricks-langchain
 
 ### From Source
 ```sh
-pip install git+ssh://git@github.com/databricks/databricks-ai-bridge.git#subdirectory=integrations/langchain
+pip install git+https://git@github.com/databricks/databricks-ai-bridge.git#subdirectory=integrations/langchain
 ```
 
 ## Key Features

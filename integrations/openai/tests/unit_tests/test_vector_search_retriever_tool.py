@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, Mock, patch
@@ -8,6 +9,7 @@ from databricks_ai_bridge.test_utils.vector_search import (  # noqa: F401
     ALL_INDEX_NAMES,
     DELTA_SYNC_INDEX,
     DIRECT_ACCESS_INDEX,
+    INPUT_TEXTS,
     mock_vs_client,
     mock_workspace_client,
 )
@@ -15,12 +17,11 @@ from mlflow.entities import SpanType
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionMessage,
-    ChatCompletionMessageParam,
     ChatCompletionMessageToolCall,
 )
 from openai.types.chat.chat_completion import Choice
 from openai.types.chat.chat_completion_message_tool_call_param import Function
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 
 from databricks_openai import VectorSearchRetrieverTool
 
@@ -56,9 +57,9 @@ def get_chat_completion_response(tool_name: str, index_name: str):
                             function=Function(
                                 arguments='{"query":"Databricks Agent Framework"}',
                                 name=tool_name
-                                or index_name.split(".")[
-                                    -1
-                                ],  # see rewrite_index_name() in VectorSearchRetrieverTool
+                                or index_name.replace(
+                                    ".", "__"
+                                ),  # see get_tool_name() in VectorSearchRetrieverTool
                             ),
                             type="function",
                         )
@@ -78,6 +79,7 @@ def init_vector_search_tool(
     tool_name: Optional[str] = None,
     tool_description: Optional[str] = None,
     text_column: Optional[str] = None,
+    embedding_model_name: Optional[str] = None,
 ) -> VectorSearchRetrieverTool:
     kwargs: Dict[str, Any] = {
         "index_name": index_name,
@@ -85,11 +87,13 @@ def init_vector_search_tool(
         "tool_name": tool_name,
         "tool_description": tool_description,
         "text_column": text_column,
+        "embedding_model_name": embedding_model_name,
     }
     if index_name != DELTA_SYNC_INDEX:
         kwargs.update(
             {
                 "text_column": "text",
+                "embedding_model_name": "text-embedding-3-small",
             }
         )
     return VectorSearchRetrieverTool(**kwargs)  # type: ignore[arg-type]
@@ -127,24 +131,29 @@ def test_vector_search_retriever_tool_init(
         tool_name=tool_name,
         tool_description=tool_description,
         text_column=self_managed_embeddings_test.text_column,
+        embedding_model_name=self_managed_embeddings_test.embedding_model_name,
     )
     assert isinstance(vector_search_tool, BaseModel)
     # simulate call to openai.chat.completions.create
     chat_completion_resp = get_chat_completion_response(tool_name, index_name)
-    response = vector_search_tool.execute_calls(
-        chat_completion_resp,
-        embedding_model_name=self_managed_embeddings_test.embedding_model_name,
-        openai_client=self_managed_embeddings_test.open_ai_client,
+    tool_call = chat_completion_resp.choices[0].message.tool_calls[0]
+    args = json.loads(tool_call.function.arguments)
+    docs = vector_search_tool.execute(
+        query=args["query"], openai_client=self_managed_embeddings_test.open_ai_client
     )
-    assert isinstance(response, list)
+    assert docs is not None
+    assert len(docs) == len(INPUT_TEXTS)
+    assert sorted([d["page_content"] for d in docs]) == sorted(INPUT_TEXTS)
+    assert all(["id" in d["metadata"] for d in docs])
 
-    # ChatCompletionMessageParam is a union of different ChatCompletionMessage types so we check that each
-    # element in the list is a union member
-    adapter = TypeAdapter(List[ChatCompletionMessageParam])
-    parsed_list = adapter.validate_python(response)
-
-    # parsed_list is now a list of union members
-    assert len(parsed_list) == len(response)
+    # Ensure tracing works properly
+    trace = mlflow.get_last_active_trace()
+    spans = trace.search_spans(name=tool_name or index_name, span_type=SpanType.RETRIEVER)
+    assert len(spans) == 1
+    inputs = json.loads(trace.to_dict()["data"]["spans"][0]["attributes"]["mlflow.spanInputs"])
+    assert inputs["query"] == "Databricks Agent Framework"
+    outputs = json.loads(trace.to_dict()["data"]["spans"][0]["attributes"]["mlflow.spanOutputs"])
+    assert [d["page_content"] in INPUT_TEXTS for d in outputs]
 
 
 @pytest.mark.parametrize("columns", [None, ["id", "text"]])
@@ -162,27 +171,25 @@ def test_open_ai_client_from_env(
         tool_name=tool_name,
         tool_description=tool_description,
         text_column=self_managed_embeddings_test.text_column,
+        embedding_model_name=self_managed_embeddings_test.embedding_model_name,
     )
     assert isinstance(vector_search_tool, BaseModel)
     # simulate call to openai.chat.completions.create
     chat_completion_resp = get_chat_completion_response(tool_name, DIRECT_ACCESS_INDEX)
-    response = vector_search_tool.execute_calls(
-        chat_completion_resp,
-        embedding_model_name=self_managed_embeddings_test.embedding_model_name,
-        openai_client=self_managed_embeddings_test.open_ai_client,
+    tool_call = chat_completion_resp.choices[0].message.tool_calls[0]
+    args = json.loads(tool_call.function.arguments)
+    docs = vector_search_tool.execute(
+        query=args["query"], openai_client=self_managed_embeddings_test.open_ai_client
     )
-    assert response is not None
+    assert docs is not None
+    assert len(docs) == len(INPUT_TEXTS)
+    assert sorted([d["page_content"] for d in docs]) == sorted(INPUT_TEXTS)
+    assert all(["id" in d["metadata"] for d in docs])
 
 
 @pytest.mark.parametrize("index_name", ALL_INDEX_NAMES)
-@pytest.mark.parametrize("columns", [None, ["id", "text"]])
-@pytest.mark.parametrize("tool_name", [None, "test_tool"])
-@pytest.mark.parametrize("tool_description", [None, "Test tool for vector search"])
-def test_vector_search_retriever_tool_init(
+def test_vector_search_retriever_long_idex_name_rewrite(
     index_name: str,
-    columns: Optional[List[str]],
-    tool_name: Optional[str],
-    tool_description: Optional[str],
 ) -> None:
     if index_name == DELTA_SYNC_INDEX:
         self_managed_embeddings_test = SelfManagedEmbeddingsTest()
@@ -195,19 +202,33 @@ def test_vector_search_retriever_tool_init(
 
     vector_search_tool = init_vector_search_tool(
         index_name=index_name,
-        columns=columns,
-        tool_name=tool_name,
-        tool_description=tool_description,
         text_column=self_managed_embeddings_test.text_column,
-    )
-    assert isinstance(vector_search_tool, BaseModel)
-    # simulate call to openai.chat.completions.create
-    chat_completion_resp = get_chat_completion_response(tool_name, index_name)
-    vector_search_tool.execute_calls(
-        chat_completion_resp,
         embedding_model_name=self_managed_embeddings_test.embedding_model_name,
-        openai_client=self_managed_embeddings_test.open_ai_client,
     )
-    trace = mlflow.get_last_active_trace()
-    spans = trace.search_spans(name=tool_name or index_name, span_type=SpanType.RETRIEVER)
-    assert len(spans) == 1
+    assert vector_search_tool.tool["function"]["name"] == index_name.replace(".", "__")
+
+
+@pytest.mark.parametrize("index_name", ALL_INDEX_NAMES)
+@pytest.mark.parametrize(
+    "tool_name", [None, "really_really_really_long_tool_name_that_should_be_truncated_to_64_chars"]
+)
+def test_vector_search_retriever_long_tool_name(
+    index_name: str,
+    tool_name: Optional[str],
+) -> None:
+    if index_name == DELTA_SYNC_INDEX:
+        self_managed_embeddings_test = SelfManagedEmbeddingsTest()
+    else:
+        from openai import OpenAI
+
+        self_managed_embeddings_test = SelfManagedEmbeddingsTest(
+            "text", "text-embedding-3-small", OpenAI(api_key="your-api-key")
+        )
+
+    vector_search_tool = init_vector_search_tool(
+        index_name=index_name,
+        tool_name=tool_name,
+        text_column=self_managed_embeddings_test.text_column,
+        embedding_model_name=self_managed_embeddings_test.embedding_model_name,
+    )
+    assert len(vector_search_tool.tool["function"]["name"]) <= 64

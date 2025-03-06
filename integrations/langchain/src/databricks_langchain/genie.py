@@ -19,7 +19,9 @@ def _concat_messages_array(messages):
 
 
 @mlflow.trace()
-def _query_genie_as_agent(input, genie_space_id, genie_agent_name, client):
+def _query_genie_as_agent(
+    input, genie_space_id, genie_agent_name, client: Optional[WorkspaceClient] = None
+):
     from langchain_core.messages import AIMessage
 
     genie = Genie(genie_space_id, client=client)
@@ -46,6 +48,9 @@ def GenieAgent(
     client: Optional["WorkspaceClient"] = None,
 ):
     """Create a genie agent that can be used to query the API"""
+    if not genie_space_id:
+        raise ValueError("genie_space_id is required to create a GenieAgent")
+
     from functools import partial
 
     from langchain_core.runnables import RunnableLambda

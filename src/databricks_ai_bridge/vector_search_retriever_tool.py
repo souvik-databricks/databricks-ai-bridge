@@ -1,3 +1,5 @@
+import logging
+import re
 from functools import wraps
 from typing import Any, Dict, List, Optional
 
@@ -9,10 +11,11 @@ from mlflow.models.resources import (
     DatabricksVectorSearchIndex,
     Resource,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, validator
 
 from databricks_ai_bridge.utils.vector_search import IndexDetails
 
+_logger = logging.getLogger(__name__)
 DEFAULT_TOOL_DESCRIPTION = "A vector search-based retrieval tool for querying indexed embeddings."
 
 
@@ -69,6 +72,14 @@ class VectorSearchRetrieverToolMixin(BaseModel):
         description="When specified, will use workspace client credential strategy to instantiate VectorSearchClient",
     )
 
+    @validator("tool_name")
+    def validate_tool_name(cls, tool_name):
+        if tool_name is not None:
+            pattern = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+            if not pattern.fullmatch(tool_name):
+                raise ValueError("tool_name must match the pattern '^[a-zA-Z0-9_-]{1,64}$'")
+        return tool_name
+
     def _get_default_tool_description(self, index_details: IndexDetails) -> str:
         if index_details.is_delta_sync_index():
             source_table = index_details.index_spec.get("source_table", "")
@@ -84,3 +95,15 @@ class VectorSearchRetrieverToolMixin(BaseModel):
             if embedding_endpoint
             else []
         )
+
+    def _get_tool_name(self) -> str:
+        tool_name = self.tool_name or self.index_name.replace(".", "__")
+
+        # Tool names must match the pattern '^[a-zA-Z0-9_-]+$'."
+        # The '.' from the index name are not allowed
+        if len(tool_name) > 64:
+            _logger.warning(
+                f"Tool name {tool_name} is too long, truncating to 64 characters {tool_name[-64:]}."
+            )
+            return tool_name[-64:]
+        return tool_name

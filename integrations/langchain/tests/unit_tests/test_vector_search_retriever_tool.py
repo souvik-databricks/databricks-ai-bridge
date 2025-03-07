@@ -117,7 +117,7 @@ def test_vector_search_retriever_tool_description_generation(index_name: str) ->
     vector_search_tool = init_vector_search_tool(index_name)
     assert vector_search_tool.name != ""
     assert vector_search_tool.description != ""
-    assert vector_search_tool.name == index_name
+    assert vector_search_tool.name == index_name.replace(".", "__")
     assert (
         "A vector search-based retrieval tool for querying indexed embeddings."
         in vector_search_tool.description
@@ -163,6 +163,34 @@ def test_vector_search_retriever_tool_resources(
     assert [res.to_dict() for res in vector_search_tool.resources] == [
         res.to_dict() for res in expected_resources
     ]
+
+
+@pytest.mark.parametrize("tool_name", [None, "valid_tool_name", "test_tool"])
+def test_tool_name_validation_valid(tool_name: Optional[str]) -> None:
+    index_name = "catalog.schema.index"
+    tool = init_vector_search_tool(index_name, tool_name=tool_name)
+    assert tool.tool_name == tool_name
+    if tool_name:
+        assert tool.name == tool_name
+
+
+@pytest.mark.parametrize("tool_name", ["test.tool.name", "tool&name"])
+def test_tool_name_validation_invalid(tool_name: str) -> None:
+    index_name = "catalog.schema.index"
+    with pytest.raises(ValueError):
+        init_vector_search_tool(index_name, tool_name=tool_name)
+
+
+@pytest.mark.parametrize(
+    "index_name,name",
+    [
+        ("catalog.schema.index", "catalog__schema__index"),
+        ("cata_log.schema_.index", "cata_log__schema___index"),
+    ],
+)
+def test_index_name_to_tool_name(index_name: str, name: str) -> None:
+    vector_search_tool = init_vector_search_tool(index_name)
+    assert vector_search_tool.name == name
 
 
 def test_vector_search_client_model_serving_environment():

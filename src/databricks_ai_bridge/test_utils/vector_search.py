@@ -125,6 +125,17 @@ def _get_index(
 
 @pytest.fixture(autouse=True)
 def mock_vs_client() -> Generator:
+    def _get_index(
+        endpoint_name: Optional[str] = None,
+        index_name: str = None,  # type: ignore
+    ) -> MagicMock:
+        index = MagicMock(spec=VectorSearchIndex)
+        if index_name not in INDEX_DETAILS:
+            index_name = DIRECT_ACCESS_INDEX
+        index.describe.return_value = INDEX_DETAILS[index_name]
+        index.similarity_search.return_value = EXAMPLE_SEARCH_RESPONSE
+        return index
+
     mock_client = MagicMock()
     mock_client.get_index.side_effect = _get_index
     with mock.patch(
